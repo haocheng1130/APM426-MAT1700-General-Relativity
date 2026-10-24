@@ -1,0 +1,995 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kerr Geodesic Explorer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+/* Layout: observatory console. Controls rail on the left, orbit viewport on the right, diagnostics under the viewport. */
+:root {
+  --ink: #0a1120;
+  --panel: #101a2d;
+  --panel-2: #16223a;
+  --line: #24324f;
+  --text: #e2e8f3;
+  --muted: #8f9bb5;
+  --orbit: #f2c46a;
+  --orbit-dim: rgba(242, 196, 106, 0.28);
+  --ghost: rgba(226, 232, 243, 0.08);
+  --ergo: #5db6ad;
+  --rim: #8a7be0;
+  --grid: rgba(143, 155, 181, 0.16);
+  --allowed: rgba(242, 196, 106, 0.18);
+  --forbidden: rgba(255, 138, 122, 0.10);
+  --danger: #ff8a7a;
+  --ok: #8fd3a2;
+  --font-display: "STIX Two Text", "Cambria", "Times New Roman", serif;
+  --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 6px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--text);
+  font: 14px/1.5 var(--font-ui);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+var, .math { font-family: var(--font-display); font-style: italic; font-size: 1.12em; }
+.math-up { font-family: var(--font-display); font-size: 1.12em; }
+.app { max-width: 1440px; margin: 0 auto; display: grid; gap: 18px; }
+
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 24px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: 30px; line-height: 1.1; margin: 0 0 6px; letter-spacing: 0.01em; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 68ch; }
+.lede var { color: var(--text); }
+.credit { color: var(--muted); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.workspace { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 960px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .stage { order: -1; }
+}
+
+/* Controls rail */
+.rail { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); display: grid; }
+.rail section { padding: 14px 16px; display: grid; gap: 12px; border-top: 1px solid var(--line); }
+.rail section:first-child { border-top: 0; }
+.rail h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.field { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 4px 10px; align-items: center; }
+.field label { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; }
+.field .hint { color: var(--muted); font-size: 12px; }
+input[type="range"] { width: 100%; accent-color: var(--orbit); margin: 0; }
+input[type="number"], select {
+  width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 4px; padding: 5px 7px; font: 13px var(--font-data); font-variant-numeric: tabular-nums;
+}
+select { font-family: var(--font-ui); font-size: 14px; }
+input:focus-visible, select:focus-visible, button:focus-visible, .seg label:focus-within { outline: 2px solid var(--orbit); outline-offset: 2px; }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg label { position: relative; text-align: center; padding: 6px 8px; cursor: pointer; color: var(--muted); font-size: 13px; }
+.seg label + label { border-left: 1px solid var(--line); }
+.seg input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+.seg label:has(input:checked) { background: var(--panel-2); color: var(--text); box-shadow: inset 0 -2px 0 var(--orbit); }
+.checks { display: grid; gap: 6px; }
+.checks label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.checks input { accent-color: var(--orbit); }
+.sub { display: grid; gap: 12px; }
+.note { margin: 0; color: var(--muted); font-size: 12px; }
+
+/* Viewport */
+.stage { display: grid; gap: 18px; min-width: 0; }
+.viewport { position: relative; background: radial-gradient(120% 90% at 50% 45%, #111c33 0%, var(--ink) 70%); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; height: clamp(360px, 66vh, 760px); }
+.viewport canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.viewport canvas:active { cursor: grabbing; }
+.overlay-top { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; pointer-events: none; }
+.overlay-top > * { pointer-events: auto; }
+.views { display: flex; gap: 4px; }
+button { font: 500 13px var(--font-ui); color: var(--text); background: rgba(16, 26, 45, 0.86); border: 1px solid var(--line); border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button[aria-pressed="true"] { border-color: var(--orbit); color: var(--orbit); }
+.badge { font: 12px var(--font-data); color: var(--muted); background: rgba(16, 26, 45, 0.86); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; white-space: nowrap; }
+.transport { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; background: rgba(16, 26, 45, 0.86); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; }
+.transport button { background: var(--panel-2); min-width: 64px; }
+.transport input { flex: 1; min-width: 60px; }
+.clock { font: 12px var(--font-data); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.message { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; pointer-events: none; }
+.message div { max-width: 46ch; background: rgba(16, 26, 45, 0.94); border: 1px solid var(--danger); border-radius: var(--radius); padding: 14px 16px; color: var(--text); }
+.message strong { color: var(--danger); display: block; margin-bottom: 4px; }
+
+/* Diagnostics */
+.diag { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 720px) { .diag { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
+.card h3 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.card h3 span { text-transform: none; letter-spacing: 0; font-weight: 400; }
+#rplot { display: block; width: 100%; height: 190px; }
+dl.readout { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 0; }
+dl.readout dt { color: var(--muted); }
+dl.readout dd { margin: 0; font: 13px var(--font-data); font-variant-numeric: tabular-nums; text-align: right; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font: 500 12px var(--font-ui); border: 1px solid currentColor; }
+.pill.bound { color: var(--ok); }
+.pill.captured, .pill.invalid { color: var(--danger); }
+.pill.escaped { color: var(--ergo); }
+
+/* Method notes */
+.method { border-top: 1px solid var(--line); padding-top: 14px; display: grid; gap: 8px; max-width: 80ch; color: var(--muted); }
+.method h2 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 19px; color: var(--text); }
+.method p { margin: 0; }
+.method .eq { color: var(--text); font-family: var(--font-display); font-size: 16px; padding: 2px 0 2px 16px; overflow-x: auto; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="app">
+  <header>
+    <div>
+      <h1>Kerr Geodesic Explorer</h1>
+      <p class="lede">Orbits of test particles and light around a rotating black hole, integrated from the separated equations (<span class="math-up">Σ</span><var>ṙ</var>)² = <var>R</var>(<var>r</var>) and (<span class="math-up">Σ</span><var>θ̇</var>)² = <span class="math-up">Θ</span>(<var>θ</var>) in Boyer–Lindquist coordinates. Units <var>G</var> = <var>c</var> = <var>M</var> = 1.</p>
+    </div>
+    <div class="credit">APM426 · Dynamical Systems of Particles Around a Kerr Black Hole</div>
+  </header>
+
+  <div class="workspace">
+    <aside class="rail" aria-label="Orbit settings">
+      <section>
+        <h2>Orbit</h2>
+        <div class="field">
+          <label for="preset">Example</label>
+          <select id="preset" style="grid-column: 1 / -1"></select>
+        </div>
+        <div class="seg" role="radiogroup" aria-label="How to set up the orbit">
+          <label><input type="radio" name="mode" id="mode-bound" value="bound" checked>Bound orbit</label>
+          <label><input type="radio" name="mode" id="mode-custom" value="custom">Custom constants</label>
+        </div>
+        <div class="field">
+          <label for="a-range"><span><var>a</var> / <var>M</var></span><span class="hint">spin</span></label>
+          <input type="range" id="a-range" min="0" max="0.998" step="0.001">
+          <input type="number" id="a-num" min="0" max="0.998" step="0.001">
+        </div>
+      </section>
+
+      <section id="bound-controls" class="sub">
+        <h2>Shape</h2>
+        <div class="field">
+          <label for="rp-range"><span><var>r</var><sub>p</sub></span><span class="hint">periapsis</span></label>
+          <input type="range" id="rp-range" min="1.5" max="40" step="0.05">
+          <input type="number" id="rp-num" min="1.5" max="40" step="0.05">
+        </div>
+        <div class="field">
+          <label for="ra-range"><span><var>r</var><sub>a</sub></span><span class="hint">apoapsis</span></label>
+          <input type="range" id="ra-range" min="1.5" max="60" step="0.05">
+          <input type="number" id="ra-num" min="1.5" max="60" step="0.05">
+        </div>
+        <div class="field">
+          <label for="inc-range"><span><var>ι</var> (degrees)</span><span class="hint">inclination</span></label>
+          <input type="range" id="inc-range" min="0" max="180" step="1">
+          <input type="number" id="inc-num" min="0" max="180" step="1">
+        </div>
+        <p class="note">0° is equatorial and prograde, 90° polar, 180° retrograde. <var>E</var>, <var>L</var>, <var>Q</var> are solved from <var>R</var>(<var>r</var><sub>p</sub>) = <var>R</var>(<var>r</var><sub>a</sub>) = 0.</p>
+      </section>
+
+      <section id="custom-controls" class="sub" hidden>
+        <h2>Constants of motion</h2>
+        <div class="seg" role="radiogroup" aria-label="Particle">
+          <label><input type="radio" name="kind" id="kind-massive" value="massive" checked>Massive particle</label>
+          <label><input type="radio" name="kind" id="kind-photon" value="photon">Light ray</label>
+        </div>
+        <div class="field">
+          <label for="E-range"><span><var>E</var></span><span class="hint">energy</span></label>
+          <input type="range" id="E-range" min="0.3" max="1.6" step="0.0005">
+          <input type="number" id="E-num" min="0.3" max="1.6" step="0.0005">
+        </div>
+        <div class="field">
+          <label for="L-range"><span><var>L</var></span><span class="hint">angular momentum</span></label>
+          <input type="range" id="L-range" min="-10" max="10" step="0.001">
+          <input type="number" id="L-num" min="-10" max="10" step="0.001">
+        </div>
+        <div class="field">
+          <label for="Q-range"><span><var>Q</var></span><span class="hint">Carter constant</span></label>
+          <input type="range" id="Q-range" min="-5" max="60" step="0.01">
+          <input type="number" id="Q-num" min="-5" max="60" step="0.01">
+        </div>
+        <div class="field">
+          <label for="r0-range"><span><var>r</var><sub>0</sub></span><span class="hint">starting radius</span></label>
+          <input type="range" id="r0-range" min="1.1" max="60" step="0.05">
+          <input type="number" id="r0-num" min="1.1" max="60" step="0.05">
+        </div>
+        <div class="field">
+          <label for="th0-range"><span><var>θ</var><sub>0</sub> (degrees)</span><span class="hint">starting latitude</span></label>
+          <input type="range" id="th0-range" min="1" max="179" step="1">
+          <input type="number" id="th0-num" min="1" max="179" step="1">
+        </div>
+        <div class="seg" role="radiogroup" aria-label="Initial radial direction">
+          <label><input type="radio" name="sr" id="sr-in" value="-1" checked>Moving inward</label>
+          <label><input type="radio" name="sr" id="sr-out" value="1">Moving outward</label>
+        </div>
+        <div class="seg" role="radiogroup" aria-label="Initial polar direction">
+          <label><input type="radio" name="sth" id="sth-s" value="1" checked>Heading south</label>
+          <label><input type="radio" name="sth" id="sth-n" value="-1">Heading north</label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Simulation</h2>
+        <div class="field">
+          <label for="tmax-range"><span>Duration (<var>t</var> / <var>M</var>)</span><span class="hint">coordinate time</span></label>
+          <input type="range" id="tmax-range" min="100" max="20000" step="100">
+          <input type="number" id="tmax-num" min="100" max="20000" step="100">
+        </div>
+        <div class="field">
+          <label for="speed-range"><span>Playback</span><span class="hint" id="speed-label"></span></label>
+          <input type="range" id="speed-range" min="0" max="100" step="1" style="grid-column: 1 / -1">
+        </div>
+        <div class="seg" role="radiogroup" aria-label="Animation clock">
+          <label><input type="radio" name="clock" id="clock-t" value="t" checked>Distant observer <var>t</var></label>
+          <label><input type="radio" name="clock" id="clock-tau" value="tau">Particle <var>τ</var></label>
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" id="show-ergo" checked>Ergosphere</label>
+          <label><input type="checkbox" id="show-grid" checked>Equatorial grid</label>
+          <label><input type="checkbox" id="show-ghost" checked>Path ahead (faint)</label>
+        </div>
+      </section>
+    </aside>
+
+    <div class="stage">
+      <div class="viewport">
+        <canvas id="view" tabindex="0" aria-label="Orbit view. Drag to rotate, scroll or pinch to zoom, double-click to reset."></canvas>
+        <div class="overlay-top">
+          <div class="views" role="group" aria-label="Camera">
+            <button type="button" id="view-3d" aria-pressed="true">3D</button>
+            <button type="button" id="view-top" aria-pressed="false">Top <span class="math">x</span>–<span class="math">y</span></button>
+            <button type="button" id="view-side" aria-pressed="false">Side <span class="math">x</span>–<span class="math">z</span></button>
+          </div>
+          <div class="badge" id="status-badge">–</div>
+        </div>
+        <div class="message" id="message" hidden><div><strong id="message-title"></strong><span id="message-text"></span></div></div>
+        <div class="transport">
+          <button type="button" id="play">Pause</button>
+          <button type="button" id="restart">Restart</button>
+          <input type="range" id="scrub" min="0" max="1000" step="1" value="0" aria-label="Position along the orbit">
+          <span class="clock" id="clock"></span>
+        </div>
+      </div>
+
+      <div class="diag">
+        <div class="card">
+          <h3>Radial function <span><var>R</var>(<var>r</var>), motion allowed where <var>R</var> ≥ 0</span></h3>
+          <canvas id="rplot"></canvas>
+        </div>
+        <div class="card">
+          <h3>Orbit data</h3>
+          <dl class="readout">
+            <dt>Status</dt><dd id="o-status">–</dd>
+            <dt>Energy <var>E</var></dt><dd id="o-E">–</dd>
+            <dt>Angular momentum <var>L</var></dt><dd id="o-L">–</dd>
+            <dt>Carter constant <var>Q</var></dt><dd id="o-Q">–</dd>
+            <dt>Horizon <var>r</var><sub>+</sub></dt><dd id="o-rh">–</dd>
+            <dt>Radial range</dt><dd id="o-rr">–</dd>
+            <dt>Latitude range <var>θ</var></dt><dd id="o-th">–</dd>
+            <dt>Drift of first integrals</dt><dd id="o-drift">–</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="method">
+    <h2>How the orbits are computed</h2>
+    <p>For constants <var>E</var>, <var>L</var>, <var>Q</var> and <var>κ</var> = −1 (massive) or 0 (light), Theorem 3.3 of the report gives (<span class="math-up">Σ</span><var>ṙ</var>)² = <var>R</var>(<var>r</var>) and (<span class="math-up">Σ</span><var>θ̇</var>)² = <span class="math-up">Θ</span>(<var>θ</var>), with</p>
+    <p class="eq"><var>R</var>(<var>r</var>) = <span class="math-up">Δ</span>[<var>κr</var>² − (<var>L</var> − <var>aE</var>)² − <var>Q</var>] + [<var>E</var>(<var>r</var>² + <var>a</var>²) − <var>aL</var>]²,   <span class="math-up">Θ</span>(<var>θ</var>) = <var>Q</var> + cos²<var>θ</var> [(<var>κ</var> + <var>E</var>²)<var>a</var>² − <var>L</var>²/sin²<var>θ</var>].</p>
+    <p>Changing the parameter to Mino time, <var>dσ</var> = <var>dλ</var> / <span class="math-up">Σ</span>, decouples the two equations. The page integrates their derivatives <var>d</var>²<var>r</var>/<var>dσ</var>² = <var>R′</var>(<var>r</var>)/2 and <var>d</var>²<var>θ</var>/<var>dσ</var>² = <span class="math-up">Θ</span><var>′</var>(<var>θ</var>)/2, which pass smoothly through turning points, together with <var>dφ</var>/<var>dσ</var> and <var>dt</var>/<var>dσ</var> from Theorem 3.4 and <var>dλ</var>/<var>dσ</var> = <span class="math-up">Σ</span>. The integrator is an adaptive Dormand–Prince 5(4) scheme with relative tolerance 10⁻¹⁰. The drift readout reports the largest violation of (<var>dr</var>/<var>dσ</var>)² = <var>R</var> and (<var>dθ</var>/<var>dσ</var>)² = <span class="math-up">Θ</span> along the orbit.</p>
+    <p>For bound orbits the page writes <var>L</var> = <var>x</var>√<var>C</var> and <var>Q</var> = (1 − <var>x</var>²)<var>C</var> with <var>x</var> = cos <var>ι</var>, and solves <var>R</var>(<var>r</var><sub>p</sub>) = <var>R</var>(<var>r</var><sub>a</sub>) = 0 for <var>E</var> and <var>C</var> by Newton's method, starting from a wide orbit and shrinking it step by step. Positions are drawn at <var>x</var> = √(<var>r</var>² + <var>a</var>²) sin <var>θ</var> cos <var>φ</var>, <var>y</var> = √(<var>r</var>² + <var>a</var>²) sin <var>θ</var> sin <var>φ</var>, <var>z</var> = <var>r</var> cos <var>θ</var>. A run stops when the particle reaches <var>r</var><sub>+</sub> + 0.05 (Boyer–Lindquist <var>t</var> diverges at the horizon), escapes to large <var>r</var>, or reaches the chosen duration.</p>
+  </section>
+</div>
+
+<script>
+/* ===== physics: begin ===== */
+const Kerr = (() => {
+  // Units G = c = M = 1, Boyer–Lindquist coordinates (t, r, θ, φ).
+  const horizon = a => 1 + Math.sqrt(Math.max(0, 1 - a * a));
+  const ergoRadius = (a, th) => 1 + Math.sqrt(Math.max(0, 1 - a * a * Math.cos(th) ** 2));
+
+  // c = { a, E, L, Q, k } with k = κ = g_{μν} u^μ u^ν (−1 massive, 0 light).
+  function R(c, r) {
+    const D = r * r + c.a * c.a - 2 * r, P = c.E * (r * r + c.a * c.a) - c.a * c.L;
+    return D * (c.k * r * r - (c.L - c.a * c.E) ** 2 - c.Q) + P * P;
+  }
+  function dR(c, r) {
+    const D = r * r + c.a * c.a - 2 * r, P = c.E * (r * r + c.a * c.a) - c.a * c.L;
+    return (2 * r - 2) * (c.k * r * r - (c.L - c.a * c.E) ** 2 - c.Q) + 2 * c.k * r * D + 4 * c.E * r * P;
+  }
+  function Theta(c, th) {
+    const s = Math.sin(th), co = Math.cos(th);
+    return c.Q + co * co * ((c.k + c.E * c.E) * c.a * c.a - c.L * c.L / (s * s));
+  }
+  function dTheta(c, th) {
+    const s = Math.sin(th), co = Math.cos(th);
+    return -2 * s * co * (c.k + c.E * c.E) * c.a * c.a + 2 * c.L * c.L * co / (s * s * s);
+  }
+
+  // State y = [r, dr/dσ, θ, dθ/dσ, φ, t, λ] in Mino time σ, where dλ = Σ dσ.
+  function deriv(c, y, f) {
+    const a = c.a, r = y[0], th = y[2];
+    const s = Math.sin(th), co = Math.cos(th), s2 = s * s;
+    const D = r * r + a * a - 2 * r, P = c.E * (r * r + a * a) - a * c.L;
+    f[0] = y[1];
+    f[1] = 0.5 * dR(c, r);
+    f[2] = y[3];
+    f[3] = 0.5 * dTheta(c, th);
+    f[4] = -(a * c.E - c.L / s2) + a * P / D;
+    f[5] = -a * (a * c.E * s2 - c.L) + (r * r + a * a) * P / D;
+    f[6] = r * r + a * a * co * co;
+  }
+
+  // Dormand–Prince 5(4) coefficients.
+  const A21 = 1 / 5;
+  const A31 = 3 / 40, A32 = 9 / 40;
+  const A41 = 44 / 45, A42 = -56 / 15, A43 = 32 / 9;
+  const A51 = 19372 / 6561, A52 = -25360 / 2187, A53 = 64448 / 6561, A54 = -212 / 729;
+  const A61 = 9017 / 3168, A62 = -355 / 33, A63 = 46732 / 5247, A64 = 49 / 176, A65 = -5103 / 18656;
+  const B1 = 35 / 384, B3 = 500 / 1113, B4 = 125 / 192, B5 = -2187 / 6784, B6 = 11 / 84;
+  const E1 = 71 / 57600, E3 = -71 / 16695, E4 = 71 / 1920, E5 = -17253 / 339200, E6 = 22 / 525, E7 = -1 / 40;
+
+  function integrate(c, y0, opt) {
+    const o = Object.assign({ tMax: 3000, rEscape: 100, rtol: 1e-10, atol: 1e-12, maxTurn: 0.02, maxSteps: 200000 }, opt);
+    const n = 7, y = Float64Array.from(y0), yt = new Float64Array(n), y5 = new Float64Array(n);
+    const k1 = new Float64Array(n), k2 = new Float64Array(n), k3 = new Float64Array(n), k4 = new Float64Array(n),
+      k5 = new Float64Array(n), k6 = new Float64Array(n), k7 = new Float64Array(n);
+    const out = { t: [], lam: [], x: [], y: [], z: [], r: [], th: [], drift: 0, status: 'done' };
+    const a = c.a, rCapture = horizon(a) + 0.05;
+    const thetaScale = 1 + Math.abs(c.Q) + c.L * c.L + a * a;
+    const record = () => {
+      const r = y[0], th = y[2], ph = y[4], rho = Math.sqrt(r * r + a * a), s = Math.sin(th);
+      out.x.push(rho * s * Math.cos(ph));
+      out.y.push(rho * s * Math.sin(ph));
+      out.z.push(r * Math.cos(th));
+      out.t.push(y[5]);
+      out.lam.push(y[6]);
+      out.r.push(r);
+      out.th.push(th);
+      const dr = Math.abs(y[1] * y[1] - R(c, r)) / (rho * rho * rho * rho);
+      const dth = Math.abs(y[3] * y[3] - Theta(c, th)) / thetaScale;
+      out.drift = Math.max(out.drift, dr, dth);
+    };
+    const stage = (dst, h, w) => {
+      for (let i = 0; i < n; i++) {
+        let acc = y[i];
+        for (let j = 0; j < w.length; j += 2) acc += h * w[j] * w[j + 1][i];
+        dst[i] = acc;
+      }
+    };
+    record();
+    let h = 1e-4, steps = 0;
+    for (;;) {
+      deriv(c, y, k1);
+      // Cap the step so each one turns the orbit by at most maxTurn radians; this keeps the drawn path smooth.
+      const rate = Math.max(Math.abs(k1[4]), Math.abs(k1[2]), Math.abs(k1[0]) / y[0], 1e-6);
+      const hMax = o.maxTurn / rate;
+      for (;;) {
+        h = Math.min(h, hMax);
+        stage(yt, h, [A21, k1]); deriv(c, yt, k2);
+        stage(yt, h, [A31, k1, A32, k2]); deriv(c, yt, k3);
+        stage(yt, h, [A41, k1, A42, k2, A43, k3]); deriv(c, yt, k4);
+        stage(yt, h, [A51, k1, A52, k2, A53, k3, A54, k4]); deriv(c, yt, k5);
+        stage(yt, h, [A61, k1, A62, k2, A63, k3, A64, k4, A65, k5]); deriv(c, yt, k6);
+        for (let i = 0; i < n; i++) y5[i] = y[i] + h * (B1 * k1[i] + B3 * k3[i] + B4 * k4[i] + B5 * k5[i] + B6 * k6[i]);
+        deriv(c, y5, k7);
+        let s = 0;
+        for (let i = 0; i < 5; i++) {
+          const sc = o.atol + o.rtol * Math.max(Math.abs(y[i]), Math.abs(y5[i]));
+          const e = h * (E1 * k1[i] + E3 * k3[i] + E4 * k4[i] + E5 * k5[i] + E6 * k6[i] + E7 * k7[i]) / sc;
+          s += e * e;
+        }
+        const err = Math.sqrt(s / 5);
+        const fac = err === 0 ? 5 : Math.min(5, Math.max(0.2, 0.9 * Math.pow(err, -0.2)));
+        if (err <= 1 && y5.every(Number.isFinite)) { y.set(y5); h *= fac; break; }
+        h *= Math.min(fac, 0.5);
+        if (h < 1e-13) { out.status = 'stalled'; return out; }
+      }
+      steps++;
+      record();
+      if (y[0] <= rCapture) { out.status = 'captured'; break; }
+      if (y[0] >= o.rEscape && y[1] > 0) { out.status = 'escaped'; break; }
+      if (y[5] >= o.tMax) { out.status = 'done'; break; }
+      if (steps >= o.maxSteps) { out.status = 'truncated'; break; }
+    }
+    return out;
+  }
+
+  // Bound orbit with turning points rp ≤ ra and inclination x = cos ι = L / √(L² + Q).
+  // Unknowns E and C = L² + Q; we follow the solution from a wide orbit down to the target.
+  function solveBound(a, rp, ra, x) {
+    const circular = ra - rp < 1e-6;
+    const e = circular ? 0 : (ra - rp) / (ra + rp);
+    const p = circular ? rp : 2 * ra * rp / (ra + rp);
+    const make = (E, C) => ({ a, E, L: x * Math.sqrt(Math.max(C, 0)), Q: (1 - x * x) * Math.max(C, 0), k: -1 });
+    const residual = (E, C, pp) => {
+      const c = make(E, C), r1 = pp / (1 + e), r2 = pp / (1 - e);
+      return circular ? [R(c, pp), dR(c, pp)] : [R(c, r1), R(c, r2)];
+    };
+    const newton = (E, C, pp) => {
+      for (let it = 0; it < 60; it++) {
+        const f = residual(E, C, pp);
+        const hE = 1e-7, hC = 1e-7 * Math.max(1, C);
+        const fE = residual(E + hE, C, pp), fC = residual(E, C + hC, pp);
+        const j11 = (fE[0] - f[0]) / hE, j21 = (fE[1] - f[1]) / hE;
+        const j12 = (fC[0] - f[0]) / hC, j22 = (fC[1] - f[1]) / hC;
+        const det = j11 * j22 - j12 * j21;
+        if (!Number.isFinite(det) || det === 0) return null;
+        const dE = (f[0] * j22 - f[1] * j12) / det, dC = (j11 * f[1] - j21 * f[0]) / det;
+        E -= dE; C -= dC;
+        if (!Number.isFinite(E) || !Number.isFinite(C) || C <= 0) return null;
+        if (Math.abs(dE) < 1e-13 && Math.abs(dC) < 1e-11 * Math.max(1, C)) return [E, C];
+      }
+      return null;
+    };
+    const p0 = Math.max(p, 60);
+    let E = Math.sqrt(((p0 - 2) ** 2 - 4 * e * e) / (p0 * (p0 - 3 - e * e)));
+    let C = p0 * p0 / (p0 - 3 - e * e);
+    const steps = p0 > p ? 40 : 1;
+    for (let i = 1; i <= steps; i++) {
+      const pp = p0 * Math.pow(p / p0, i / steps);
+      const sol = newton(E, C, pp);
+      if (!sol) return null;
+      [E, C] = sol;
+    }
+    const c = make(E, C);
+    if (!(E > 0 && E < 1)) return null;
+    if (circular) {
+      const h = 1e-4 * rp;
+      c.unstable = dR(c, rp + h) - dR(c, rp - h) > 0;
+      return c;
+    }
+    if (dR(c, rp) <= 0 || dR(c, ra) >= 0) return null;
+    for (let i = 1; i < 60; i++) if (R(c, rp + (ra - rp) * i / 60) < 0) return null;
+    return c;
+  }
+
+  // Constants of the spherical photon orbit at radius r (E = 1).
+  function sphericalPhoton(a, r) {
+    return {
+      L: -(r ** 3 - 3 * r * r + a * a * r + a * a) / (a * (r - 1)),
+      Q: -(r ** 3) * (r ** 3 - 6 * r * r + 9 * r - 4 * a * a) / (a * a * (r - 1) ** 2),
+    };
+  }
+
+  return { horizon, ergoRadius, R, dR, Theta, dTheta, deriv, integrate, solveBound, sphericalPhoton };
+})();
+/* ===== physics: end ===== */
+
+(() => {
+  const $ = id => document.getElementById(id);
+  const css = getComputedStyle(document.documentElement);
+  const color = name => css.getPropertyValue(name).trim();
+  const COL = {
+    orbit: color('--orbit'), orbitDim: color('--orbit-dim'), ghost: color('--ghost'), ergo: color('--ergo'),
+    rim: color('--rim'), grid: color('--grid'), text: color('--text'), muted: color('--muted'), line: color('--line'),
+    allowed: color('--allowed'), forbidden: color('--forbidden'), danger: color('--danger'), panel: color('--panel'),
+  };
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const sp = Kerr.sphericalPhoton(0.9, 2.6);
+  const PRESETS = [
+    { name: 'Inclined, precessing orbit (a = 0.9)', a: 0.9, mode: 'bound', rp: 6, ra: 12, inc: 45, tMax: 4000, speed: 67 },
+    { name: 'Polar orbit with frame dragging (a = 0.9)', a: 0.9, mode: 'bound', rp: 7, ra: 11, inc: 90, tMax: 4000, speed: 67 },
+    { name: 'Retrograde orbit (a = 0.9)', a: 0.9, mode: 'bound', rp: 9, ra: 14, inc: 155, tMax: 4000, speed: 67 },
+    { name: 'Zoom–whirl orbit (a = 0.7)', a: 0.7, mode: 'bound', rp: 2.68, ra: 16, inc: 20, tMax: 2500, speed: 62 },
+    { name: 'Schwarzschild rosette (a = 0)', a: 0, mode: 'bound', rp: 8, ra: 20, inc: 0, tMax: 6000, speed: 72 },
+    { name: 'Plunge into the black hole (a = 0.9)', a: 0.9, mode: 'custom', kind: 'massive', E: 0.97, L: 2.2, Q: 3, r0: 14, th0: 80, sr: -1, sth: 1, tMax: 1000, speed: 32 },
+    { name: 'Unstable spherical photon orbit (a = 0.9)', a: 0.9, mode: 'custom', kind: 'photon', E: 1, L: sp.L, Q: sp.Q, r0: 2.6, th0: 90, sr: 1, sth: 1, tMax: 400, speed: 37 },
+    { name: 'Light ray bent by the hole (a = 0.9)', a: 0.9, mode: 'custom', kind: 'photon', E: 1, L: 5, Q: 12, r0: 40, th0: 90, sr: -1, sth: 1, tMax: 400, speed: 40 },
+  ];
+
+  const state = {
+    mode: 'bound', a: 0.9, rp: 6, ra: 12, inc: 45,
+    kind: 'massive', E: 0.97, L: 2.4, Q: 3, r0: 14, th0: 80, sr: -1, sth: 1,
+    tMax: 4000, speed: 67, clock: 't', ergo: true, grid: true, ghost: true,
+  };
+  let run = null;         // { c, traj, fit, error }
+  const cam = { az: -0.55, el: 0.42, zoom: 1 };
+  const anim = { playing: !reduceMotion, clock: 0, last: 0 };
+  let proj = null;        // cached screen projection of the trajectory
+
+  // ---------- controls ----------
+  const fmt = (v, d) => Number.isFinite(v) ? v.toFixed(d) : '–';
+  const fields = {};
+  function bindField(key, digits, onInput) {
+    const range = $(key + '-range'), num = $(key + '-num');
+    const set = v => { range.value = v; num.value = +(+v).toFixed(digits); };
+    range.addEventListener('input', () => { num.value = range.value; onInput(parseFloat(range.value)); });
+    num.addEventListener('change', () => {
+      let v = parseFloat(num.value);
+      if (!Number.isFinite(v)) v = parseFloat(range.value);
+      v = Math.min(+num.max, Math.max(+num.min, v));
+      set(v);
+      onInput(v);
+    });
+    fields[key] = { set };
+  }
+  const setter = key => v => { state[key] = v; schedule(); };
+  bindField('a', 3, setter('a'));
+  bindField('rp', 2, v => { state.rp = v; if (state.ra < v) { state.ra = v; fields.ra.set(v); } schedule(); });
+  bindField('ra', 2, v => { state.ra = v; if (state.rp > v) { state.rp = v; fields.rp.set(v); } schedule(); });
+  bindField('inc', 0, setter('inc'));
+  bindField('E', 4, setter('E'));
+  bindField('L', 3, setter('L'));
+  bindField('Q', 3, setter('Q'));
+  bindField('r0', 2, setter('r0'));
+  bindField('th0', 0, setter('th0'));
+  bindField('tmax', 0, setter('tMax'));
+
+  const radios = (name, fn) => document.querySelectorAll(`input[name="${name}"]`).forEach(el =>
+    el.addEventListener('change', () => { if (el.checked) fn(el.value); }));
+  radios('mode', v => { state.mode = v; syncMode(); schedule(); });
+  radios('kind', v => { state.kind = v; schedule(); });
+  radios('sr', v => { state.sr = +v; schedule(); });
+  radios('sth', v => { state.sth = +v; schedule(); });
+  radios('clock', v => { state.clock = v; anim.clock = convertClock(); });
+
+  const speedValue = () => 2 * Math.pow(500, state.speed / 100);    // M per second, 2 … 1000
+  const speedRange = $('speed-range');
+  speedRange.addEventListener('input', () => { state.speed = +speedRange.value; $('speed-label').textContent = `${Math.round(speedValue())} M per second`; });
+  ['ergo', 'grid', 'ghost'].forEach(k => $('show-' + k).addEventListener('change', e => { state[k] = e.target.checked; }));
+
+  function syncMode() {
+    $('bound-controls').hidden = state.mode !== 'bound';
+    $('custom-controls').hidden = state.mode !== 'custom';
+  }
+  function writeControls() {
+    fields.a.set(state.a); fields.rp.set(state.rp); fields.ra.set(state.ra); fields.inc.set(state.inc);
+    fields.E.set(state.E); fields.L.set(state.L); fields.Q.set(state.Q); fields.r0.set(state.r0); fields.th0.set(state.th0);
+    fields.tmax.set(state.tMax);
+    $('mode-' + state.mode).checked = true;
+    $('kind-' + state.kind).checked = true;
+    $(state.sr < 0 ? 'sr-in' : 'sr-out').checked = true;
+    $(state.sth > 0 ? 'sth-s' : 'sth-n').checked = true;
+    speedRange.value = state.speed;
+    $('speed-label').textContent = `${Math.round(speedValue())} M per second`;
+    syncMode();
+  }
+
+  const presetSel = $('preset');
+  PRESETS.forEach((p, i) => presetSel.add(new Option(p.name, i)));
+  presetSel.add(new Option('Your own settings', 'own'));
+  presetSel.addEventListener('change', () => { if (presetSel.value !== 'own') applyPreset(PRESETS[+presetSel.value]); });
+  document.querySelector('.rail').addEventListener('input', e => { if (e.target !== presetSel && e.target.id !== 'speed-range' && !e.target.id.startsWith('show-') && e.target.name !== 'clock') presetSel.value = 'own'; });
+  function applyPreset(p) {
+    Object.assign(state, p);
+    writeControls();
+    compute();
+  }
+
+  // ---------- computation ----------
+  let pending = 0;
+  function schedule() { clearTimeout(pending); pending = setTimeout(compute, 90); }
+
+  function compute() {
+    const a = state.a, rH = Kerr.horizon(a);
+    let c, y0, error = null, rEscape;
+    if (state.mode === 'bound') {
+      if (state.rp <= rH + 0.1) error = ['Periapsis inside the horizon', `Choose r_p larger than the horizon r₊ = ${rH.toFixed(3)}.`];
+      else {
+        c = Kerr.solveBound(a, state.rp, state.ra, Math.cos(state.inc * Math.PI / 180));
+        if (!c) error = ['No stable bound orbit', 'These turning points are inside the plunge region for this spin and inclination. Increase r_p, or lower the inclination for a prograde orbit.'];
+      }
+      if (c) {
+        const th0 = Math.PI / 2;
+        y0 = [state.rp, 0, th0, Math.sqrt(Math.max(Kerr.Theta(c, th0), 0)), 0, 0, 0];
+        rEscape = 4 * state.ra + 20;
+      }
+    } else {
+      c = { a, E: state.E, L: state.L, Q: state.Q, k: state.kind === 'photon' ? 0 : -1 };
+      const th0 = state.th0 * Math.PI / 180, r0 = state.r0;
+      const Rr = Kerr.R(c, r0), Th = Kerr.Theta(c, th0), scale = (r0 * r0 + a * a) ** 2;
+      if (r0 <= rH + 0.06) error = ['Start inside the horizon', `Choose r₀ larger than the horizon r₊ = ${rH.toFixed(3)}.`];
+      else if (Rr < -1e-9 * scale) error = ['Forbidden starting radius', `R(r₀) = ${Rr.toPrecision(3)} is negative, so the particle cannot be at r₀ with these constants. Raise E or change L, Q or r₀; the plot below shows where R ≥ 0.`];
+      else if (Th < -1e-9 * (1 + Math.abs(c.Q) + c.L * c.L)) error = ['Forbidden starting latitude', `Θ(θ₀) = ${Th.toPrecision(3)} is negative. Move θ₀ toward the equator or increase Q.`];
+      y0 = [r0, state.sr * Math.sqrt(Math.max(Rr, 0)), th0, state.sth * Math.sqrt(Math.max(Th, 0)), 0, 0, 0];
+      rEscape = Math.max(80, 2.5 * r0);
+    }
+    let traj = null;
+    if (!error) {
+      traj = Kerr.integrate(c, y0, { tMax: state.tMax, rEscape });
+      if (traj.status === 'stalled') error = ['Integration stopped', 'The step size collapsed. Try slightly different constants.'];
+    }
+    let fit = 15;
+    if (traj) {
+      let m = 0;
+      for (let i = 0; i < traj.x.length; i++) m = Math.max(m, Math.hypot(traj.x[i], traj.y[i], traj.z[i]));
+      fit = state.mode === 'bound' ? m : (traj.status === 'escaped' ? Math.min(m, Math.max(1.4 * state.r0, 6)) : m);
+      fit = Math.max(fit * 1.08, 4);
+    } else if (state.mode === 'custom') fit = Math.max(state.r0 * 1.1, 6);
+    run = { c, traj, fit, error, rH };
+    proj = null;
+    anim.clock = 0;
+    anim.playing = !reduceMotion;
+    $('play').textContent = anim.playing ? 'Pause' : 'Play';
+    if (reduceMotion && traj) anim.clock = clockArray().at(-1);
+    updateReadout();
+  }
+
+  function clockArray() {
+    if (!run || !run.traj) return [0];
+    return state.clock === 't' ? run.traj.t : run.traj.lam;
+  }
+  // Convert the animation clock after switching between t and τ so the particle stays where it is.
+  function convertClock() {
+    if (!run || !run.traj) return 0;
+    const arr = clockArray(), previous = state.clock === 't' ? run.traj.lam : run.traj.t;
+    const { i, f } = indexAt(previous, anim.clock);
+    return arr[i] + (arr[Math.min(i + 1, arr.length - 1)] - arr[i]) * f;
+  }
+  function indexAt(arr, v) {
+    let lo = 0, hi = arr.length - 1;
+    if (v <= arr[0]) return { i: 0, f: 0 };
+    if (v >= arr[hi]) return { i: hi, f: 0 };
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (arr[mid] <= v) lo = mid; else hi = mid; }
+    return { i: lo, f: (v - arr[lo]) / (arr[hi] - arr[lo] || 1) };
+  }
+
+  const STATUS_TEXT = {
+    done: ['Bound', 'bound'], truncated: ['Bound', 'bound'], captured: ['Captured by the hole', 'captured'],
+    escaped: ['Escaped', 'escaped'], stalled: ['Stopped', 'invalid'],
+  };
+  function updateReadout() {
+    const { c, traj, error, rH } = run;
+    $('o-rh').textContent = fmt(rH, 4);
+    $('message').hidden = !error;
+    if (error) {
+      $('message-title').textContent = error[0];
+      $('message-text').textContent = error[1];
+    }
+    if (c) {
+      $('o-E').textContent = fmt(c.E, 6);
+      $('o-L').textContent = fmt(c.L, 6);
+      $('o-Q').textContent = fmt(c.Q, 6);
+    } else ['o-E', 'o-L', 'o-Q'].forEach(id => $(id).textContent = '–');
+    if (!traj || error) {
+      $('o-status').innerHTML = '<span class="pill invalid">Not allowed</span>';
+      $('status-badge').textContent = 'no orbit';
+      ['o-rr', 'o-th', 'o-drift'].forEach(id => $(id).textContent = '–');
+      return;
+    }
+    let rmin = Infinity, rmax = -Infinity, tmin = Infinity, tmax = -Infinity;
+    for (let i = 0; i < traj.r.length; i++) {
+      rmin = Math.min(rmin, traj.r[i]); rmax = Math.max(rmax, traj.r[i]);
+      const col = Math.acos(Math.cos(traj.th[i]));
+      tmin = Math.min(tmin, col); tmax = Math.max(tmax, col);
+    }
+    run.range = [rmin, rmax];
+    const [label, cls] = STATUS_TEXT[traj.status];
+    const note = c.unstable ? ' (unstable circular)' : '';
+    $('o-status').innerHTML = `<span class="pill ${cls}">${label}${note}</span>`;
+    $('o-rr').textContent = `${fmt(rmin, 3)} – ${fmt(rmax, 3)}`;
+    const deg = v => (v * 180 / Math.PI).toFixed(1) + '°';
+    $('o-th').textContent = `${deg(tmin)} – ${deg(tmax)}`;
+    $('o-drift').textContent = traj.drift.toExponential(1);
+    $('status-badge').textContent = `${traj.t.length.toLocaleString('en-US')} steps · ${label.toLowerCase()}`;
+  }
+
+  // ---------- 3D view ----------
+  const view = $('view'), ctx = view.getContext('2d');
+  const rplot = $('rplot'), rctx = rplot.getContext('2d');
+  let W = 0, H = 0, dpr = 1, PW = 0, PH = 0;
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = view.clientWidth; H = view.clientHeight;
+    view.width = Math.round(W * dpr); view.height = Math.round(H * dpr);
+    PW = rplot.clientWidth; PH = rplot.clientHeight;
+    rplot.width = Math.round(PW * dpr); rplot.height = Math.round(PH * dpr);
+    proj = null;
+  }
+  new ResizeObserver(resize).observe(view);
+  new ResizeObserver(resize).observe(rplot);
+
+  function camera() {
+    const s = Math.min(W, H - 50) / 2 / run.fit * cam.zoom;
+    return { ca: Math.cos(cam.az), sa: Math.sin(cam.az), ce: Math.cos(cam.el), se: Math.sin(cam.el), s, cx: W / 2, cy: (H - 40) / 2 + 4 };
+  }
+  // Orthographic camera: rotate by the azimuth about z, then tilt by the elevation. Depth > 0 is behind the hole.
+  function project(k, x, y, z) {
+    const x1 = x * k.ca - y * k.sa, y1 = x * k.sa + y * k.ca;
+    return [k.cx + x1 * k.s, k.cy - (z * k.ce + y1 * k.se) * k.s, y1 * k.ce - z * k.se];
+  }
+  function buildProjection(k) {
+    const t = run.traj, n = t.x.length;
+    const px = new Float32Array(n), py = new Float32Array(n), pd = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const p = project(k, t.x[i], t.y[i], t.z[i]);
+      px[i] = p[0]; py[i] = p[1]; pd[i] = p[2];
+    }
+    proj = { px, py, pd, key: `${cam.az},${cam.el},${cam.zoom},${W},${H}` };
+  }
+  // Stroke segments i0..i1 that lie on one side of the plane through the hole (side = -1 front, +1 back).
+  function strokeRange(i0, i1, side) {
+    const { px, py, pd } = proj;
+    ctx.beginPath();
+    let open = false;
+    for (let i = i0; i < i1; i++) {
+      const behind = pd[i] + pd[i + 1] > 0;
+      if ((side > 0) === behind) {
+        if (!open) { ctx.moveTo(px[i], py[i]); open = true; }
+        ctx.lineTo(px[i + 1], py[i + 1]);
+      } else open = false;
+    }
+    ctx.stroke();
+  }
+  function polyline3D(k, pts, side) {
+    ctx.beginPath();
+    let open = false;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p = project(k, ...pts[i]), q = project(k, ...pts[i + 1]);
+      if ((side > 0) === (p[2] + q[2] > 0)) {
+        if (!open) { ctx.moveTo(p[0], p[1]); open = true; }
+        ctx.lineTo(q[0], q[1]);
+      } else open = false;
+    }
+    ctx.stroke();
+  }
+
+  function ergoLines(a) {
+    const lines = [], rho = th => Math.sqrt(Kerr.ergoRadius(a, th) ** 2 + a * a);
+    for (let m = 0; m < 12; m++) {
+      const ph = m * Math.PI / 6, pts = [];
+      for (let j = 0; j <= 48; j++) {
+        const th = j * Math.PI / 48, rE = Kerr.ergoRadius(a, th), q = rho(th);
+        pts.push([q * Math.sin(th) * Math.cos(ph), q * Math.sin(th) * Math.sin(ph), rE * Math.cos(th)]);
+      }
+      lines.push(pts);
+    }
+    for (const th of [Math.PI / 4, Math.PI / 2, 3 * Math.PI / 4]) {
+      const pts = [], rE = Kerr.ergoRadius(a, th), q = rho(th);
+      for (let j = 0; j <= 96; j++) {
+        const ph = j * 2 * Math.PI / 96;
+        pts.push([q * Math.sin(th) * Math.cos(ph), q * Math.sin(th) * Math.sin(ph), rE * Math.cos(th)]);
+      }
+      lines.push(pts);
+    }
+    return lines;
+  }
+
+  function niceStep(x) {
+    const p = Math.pow(10, Math.floor(Math.log10(x))), m = x / p;
+    return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p;
+  }
+
+  function drawView() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    if (!run) return;
+    const k = camera(), a = state.a, rH = run.rH;
+    const gridStep = niceStep(run.fit / 3);
+
+    // equatorial grid, back half
+    const gridRings = [];
+    if (state.grid) {
+      for (let r = gridStep; r <= run.fit * 1.05; r += gridStep) {
+        const q = Math.sqrt(r * r + a * a), pts = [];
+        for (let j = 0; j <= 128; j++) { const u = j * 2 * Math.PI / 128; pts.push([q * Math.cos(u), q * Math.sin(u), 0]); }
+        gridRings.push(pts);
+      }
+      ctx.lineWidth = 1; ctx.strokeStyle = COL.grid;
+      gridRings.forEach(p => polyline3D(k, p, 1));
+    }
+
+    const traj = run.traj, hasTraj = traj && !run.error;
+    if (hasTraj && (!proj || proj.key !== `${cam.az},${cam.el},${cam.zoom},${W},${H}`)) buildProjection(k);
+    let idx = 0, frac = 0;
+    if (hasTraj) ({ i: idx, f: frac } = indexAt(clockArray(), anim.clock));
+    const n = hasTraj ? traj.x.length : 0;
+    const tailStart = Math.max(0, idx - Math.max(240, Math.floor(idx * 0.12)));
+    const passes = side => {
+      if (!hasTraj) return;
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      if (state.ghost && idx < n - 1) { ctx.lineWidth = 1; ctx.strokeStyle = COL.ghost; strokeRange(idx, n - 1, side); }
+      ctx.lineWidth = 1.3; ctx.strokeStyle = COL.orbitDim; strokeRange(0, tailStart, side);
+      ctx.lineWidth = 2; ctx.strokeStyle = COL.orbit; strokeRange(tailStart, idx, side);
+    };
+    passes(1);
+
+    // ergosphere, back half
+    const ergo = state.ergo && a > 0.01 ? ergoLines(a) : [];
+    ctx.lineWidth = 1; ctx.strokeStyle = COL.ergo; ctx.globalAlpha = 0.28;
+    ergo.forEach(p => polyline3D(k, p, 1));
+    ctx.globalAlpha = 1;
+
+    // horizon: an oblate spheroid with semi-axes √(r₊² + a²) and r₊ in these coordinates
+    const A = Math.sqrt(rH * rH + a * a) * k.s;
+    const B = Math.sqrt((rH * rH + a * a) * k.se * k.se + rH * rH * k.ce * k.ce) * k.s;
+    const g = ctx.createRadialGradient(k.cx, k.cy, 0, k.cx, k.cy, A);
+    g.addColorStop(0, '#000'); g.addColorStop(0.82, '#03040a'); g.addColorStop(1, '#1a1640');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(k.cx, k.cy, A, B, 0, 0, 2 * Math.PI); ctx.fill();
+    ctx.strokeStyle = COL.rim; ctx.lineWidth = 1.2; ctx.globalAlpha = 0.7; ctx.stroke(); ctx.globalAlpha = 1;
+
+    ctx.lineWidth = 1; ctx.strokeStyle = COL.ergo; ctx.globalAlpha = 0.45;
+    ergo.forEach(p => polyline3D(k, p, -1));
+    ctx.globalAlpha = 1;
+    if (state.grid) { ctx.strokeStyle = COL.grid; gridRings.forEach(p => polyline3D(k, p, -1)); }
+
+    // spin direction: an arrow along +φ just outside the ergosphere
+    if (a > 0.01) {
+      const q = Math.sqrt((Kerr.ergoRadius(a, Math.PI / 2) + 0.7) ** 2 + a * a), pts = [];
+      for (let j = 0; j <= 30; j++) { const u = -0.6 + 1.2 * j / 30; pts.push([q * Math.cos(u), q * Math.sin(u), 0]); }
+      ctx.strokeStyle = COL.rim; ctx.lineWidth = 1.5;
+      polyline3D(k, pts, -1); polyline3D(k, pts, 1);
+      const tip = project(k, ...pts[30]), prev = project(k, ...pts[27]);
+      const ang = Math.atan2(tip[1] - prev[1], tip[0] - prev[0]);
+      ctx.fillStyle = COL.rim;
+      ctx.beginPath();
+      ctx.moveTo(tip[0] + 7 * Math.cos(ang), tip[1] + 7 * Math.sin(ang));
+      ctx.lineTo(tip[0] + 6 * Math.cos(ang + 2.5), tip[1] + 6 * Math.sin(ang + 2.5));
+      ctx.lineTo(tip[0] + 6 * Math.cos(ang - 2.5), tip[1] + 6 * Math.sin(ang - 2.5));
+      ctx.fill();
+    }
+
+    passes(-1);
+
+    // the particle
+    if (hasTraj) {
+      const j = Math.min(idx + 1, n - 1);
+      const x = traj.x[idx] + (traj.x[j] - traj.x[idx]) * frac;
+      const y = traj.y[idx] + (traj.y[j] - traj.y[idx]) * frac;
+      const z = traj.z[idx] + (traj.z[j] - traj.z[idx]) * frac;
+      const p = project(k, x, y, z);
+      const A2 = A * A, inside = ((p[0] - k.cx) ** 2) / A2 + ((p[1] - k.cy) ** 2) / (B * B) < 1;
+      if (!(inside && p[2] > 0)) {
+        ctx.save();
+        ctx.shadowColor = COL.orbit; ctx.shadowBlur = 14;
+        ctx.fillStyle = '#fff4dc';
+        ctx.beginPath(); ctx.arc(p[0], p[1], 3.6, 0, 2 * Math.PI); ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // scale bar
+    const bar = gridStep * k.s, bx = 16, by = H - 62;
+    ctx.strokeStyle = COL.muted; ctx.fillStyle = COL.muted; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by); ctx.lineTo(bx + bar, by); ctx.lineTo(bx + bar, by - 4); ctx.stroke();
+    ctx.font = '12px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.fillText(`${gridStep} M`, bx + 4, by - 8);
+  }
+
+  // ---------- R(r) plot ----------
+  function drawRPlot() {
+    const g = rctx;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, PW, PH);
+    if (!run || !run.c) return;
+    const c = run.c, rH = run.rH;
+    const pad = { l: 10, r: 10, t: 10, b: 24 };
+    let hi;
+    if (state.mode === 'bound') hi = state.ra * 1.3 + 1;
+    else hi = Math.max(state.r0 * 1.4, 8);
+    if (run.range && run.traj.status !== 'escaped') hi = Math.max(hi, run.range[1] * 1.15);
+    const lo = rH;
+    const N = 320, rs = [], vs = [];
+    for (let i = 0; i <= N; i++) { const r = lo + (hi - lo) * i / N; rs.push(r); vs.push(Kerr.R(c, r)); }
+    const pos = Math.max(...vs), neg = Math.min(...vs);
+    // Show the positive lobes clearly; clip deep negative values but always keep R = 0 in view.
+    const top = (pos > 0 ? pos : -neg * 0.1) * 1.1;
+    const bottom = Math.min(-0.08 * top, Math.max(neg, -top) * 1.1);
+    const X = r => pad.l + (r - lo) / (hi - lo) * (PW - pad.l - pad.r);
+    const Y = v => pad.t + (top - Math.min(top, Math.max(bottom, v))) / (top - bottom) * (PH - pad.t - pad.b);
+    const y0 = Y(0);
+
+    // allowed and forbidden bands
+    for (let i = 0; i < N; i++) {
+      g.fillStyle = vs[i] + vs[i + 1] >= 0 ? COL.allowed : COL.forbidden;
+      g.fillRect(X(rs[i]), pad.t, X(rs[i + 1]) - X(rs[i]) + 0.5, PH - pad.t - pad.b);
+    }
+    // axis ticks
+    g.strokeStyle = COL.line; g.fillStyle = COL.muted; g.lineWidth = 1;
+    g.font = '11px "IBM Plex Mono", ui-monospace, monospace';
+    const step = niceStep((hi - lo) / 6);
+    for (let r = Math.ceil(lo / step) * step; r <= hi; r += step) {
+      const x = X(r);
+      g.beginPath(); g.moveTo(x, PH - pad.b); g.lineTo(x, PH - pad.b + 4); g.stroke();
+      g.textAlign = 'center'; g.fillText(+r.toFixed(2), x, PH - 6);
+    }
+    g.textAlign = 'right'; g.fillText('r / M', PW - pad.r, PH - pad.b - 6);
+    // zero line and curve
+    g.strokeStyle = COL.muted; g.beginPath(); g.moveTo(pad.l, y0); g.lineTo(PW - pad.r, y0); g.stroke();
+    g.strokeStyle = COL.orbit; g.lineWidth = 1.6; g.beginPath();
+    rs.forEach((r, i) => i ? g.lineTo(X(r), Y(vs[i])) : g.moveTo(X(r), Y(vs[i])));
+    g.stroke();
+    // horizon
+    g.strokeStyle = COL.rim; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(rH) + 1, pad.t); g.lineTo(X(rH) + 1, PH - pad.b); g.stroke(); g.setLineDash([]);
+    g.fillStyle = COL.rim; g.textAlign = 'left'; g.fillText('r₊', X(rH) + 5, pad.t + 10);
+    // current radius of the particle
+    if (run.traj && !run.error) {
+      const { i, f } = indexAt(clockArray(), anim.clock), t = run.traj;
+      const r = t.r[i] + (t.r[Math.min(i + 1, t.r.length - 1)] - t.r[i]) * f;
+      if (r <= hi) {
+        g.fillStyle = '#fff4dc'; g.shadowColor = COL.orbit; g.shadowBlur = 8;
+        g.beginPath(); g.arc(X(r), y0, 3.5, 0, 2 * Math.PI); g.fill(); g.shadowBlur = 0;
+      }
+    } else if (state.mode === 'custom') {
+      g.strokeStyle = COL.danger; g.beginPath(); g.moveTo(X(state.r0), pad.t); g.lineTo(X(state.r0), PH - pad.b); g.stroke();
+      g.fillStyle = COL.danger; g.fillText('r₀', X(state.r0) + 4, pad.t + 10);
+    }
+  }
+
+  // ---------- animation ----------
+  function updateClock() {
+    if (!run || !run.traj || run.error) { $('clock').textContent = ''; return; }
+    const arr = clockArray(), end = arr.at(-1);
+    const { i, f } = indexAt(clockArray(), anim.clock), t = run.traj;
+    const j = Math.min(i + 1, t.t.length - 1);
+    const tv = t.t[i] + (t.t[j] - t.t[i]) * f, lv = t.lam[i] + (t.lam[j] - t.lam[i]) * f;
+    const tauName = state.kind === 'photon' && state.mode === 'custom' ? 'λ' : 'τ';
+    $('clock').textContent = `t ${tv.toFixed(0)} M · ${tauName} ${lv.toFixed(0)} M`;
+    $('scrub').value = Math.round(1000 * anim.clock / (end || 1));
+  }
+  function frame(now) {
+    const dt = anim.last ? Math.min((now - anim.last) / 1000, 0.1) : 0;
+    anim.last = now;
+    if (run && run.traj && !run.error && anim.playing) {
+      const end = clockArray().at(-1);
+      anim.clock += dt * speedValue();
+      if (anim.clock >= end) { anim.clock = end; anim.playing = false; $('play').textContent = 'Play'; }
+    }
+    drawView();
+    drawRPlot();
+    updateClock();
+    requestAnimationFrame(frame);
+  }
+
+  $('play').addEventListener('click', () => {
+    if (!run || !run.traj) return;
+    if (!anim.playing && anim.clock >= clockArray().at(-1)) anim.clock = 0;
+    anim.playing = !anim.playing;
+    $('play').textContent = anim.playing ? 'Pause' : 'Play';
+  });
+  $('restart').addEventListener('click', () => { anim.clock = 0; anim.playing = true; $('play').textContent = 'Pause'; });
+  $('scrub').addEventListener('input', e => {
+    if (!run || !run.traj) return;
+    anim.clock = clockArray().at(-1) * e.target.value / 1000;
+    anim.playing = false; $('play').textContent = 'Play';
+  });
+
+  // camera presets and interaction
+  const viewButtons = { '3d': [-0.55, 0.42], top: [0, Math.PI / 2], side: [0, 0] };
+  function setView(name) {
+    [cam.az, cam.el] = viewButtons[name];
+    Object.keys(viewButtons).forEach(n => $('view-' + n).setAttribute('aria-pressed', String(n === name)));
+  }
+  Object.keys(viewButtons).forEach(n => $('view-' + n).addEventListener('click', () => setView(n)));
+  const pointers = new Map();
+  let pinch = 0;
+  view.addEventListener('pointerdown', e => { view.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); });
+  view.addEventListener('pointermove', e => {
+    if (!pointers.has(e.pointerId)) return;
+    const [px, py] = pointers.get(e.pointerId);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pointers.size === 1) {
+      cam.az -= (e.clientX - px) * 0.008;
+      cam.el = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cam.el + (e.clientY - py) * 0.008));
+      Object.keys(viewButtons).forEach(n => $('view-' + n).setAttribute('aria-pressed', 'false'));
+    } else if (pointers.size === 2) {
+      const [p, q] = [...pointers.values()], d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+      if (pinch) cam.zoom = Math.max(0.2, Math.min(20, cam.zoom * d / pinch));
+      pinch = d;
+    }
+  });
+  const release = e => { pointers.delete(e.pointerId); if (pointers.size < 2) pinch = 0; };
+  view.addEventListener('pointerup', release);
+  view.addEventListener('pointercancel', release);
+  view.addEventListener('wheel', e => { e.preventDefault(); cam.zoom = Math.max(0.2, Math.min(20, cam.zoom * Math.exp(-e.deltaY * 0.0015))); }, { passive: false });
+  view.addEventListener('dblclick', () => { cam.zoom = 1; setView('3d'); });
+  view.addEventListener('keydown', e => { if (e.key === ' ') { e.preventDefault(); $('play').click(); } });
+
+  applyPreset(PRESETS[0]);
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
